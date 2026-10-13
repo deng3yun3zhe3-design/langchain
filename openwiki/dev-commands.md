@@ -1,8 +1,8 @@
 ---
 type: "Developer Tools & Commands"
-title: "Development Commands and Local Setup"
-description: "Quick reference for uv, make, lint, test, and type-checking commands in the LangChain monorepo, including environment setup, pre-commit hooks, and testing workflows."
-tags: [development, build, testing, linting, typing, uv, make, pre-commit, local-setup]
+title: "Development Commands and CLI Reference"
+description: "Quick reference for common development tasks: running tests, linting, type checking, formatting, and per-package CLI commands using uv and make."
+tags: [development, build, testing, linting, typing, uv, make, pre-commit, cli-reference]
 sources:
   - id: openwiki-source-4d1645cb6317345817452838
     resource: repo://.pre-commit-config.yaml
@@ -20,10 +20,10 @@ sources:
     resource: repo://libs/Makefile
   - id: openwiki-source-a6e669bb11f217c6fbd06670
     resource: repo://libs/partners/anthropic/Makefile
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:18:34.589Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-10-13T08:31:57.014Z" }
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+    at: 2026-10-13T08:31:57.014Z
 ---
 
 ## Overview
@@ -389,5 +389,7 @@ pre-commit run --all-files
 ## Related Documentation
 
 - [Contributing Guide](repo://AGENTS.md): Detailed development conventions, PR templates, and code standards
-- [System Architecture](repo:///openwiki/architecture.md): Three-layer design and module responsibilities
-- [CI/CD Workflows](repo:///openwiki/ci-workflows.md): GitHub Actions automation and release process
+- [System Architecture](/openwiki/architecture.md): Three-layer design and module responsibilities
+- [CI/CD Workflows](/openwiki/ci-workflows.md): GitHub Actions automation and release process
+- [Unit Testing](/openwiki/unit-tests.md): Test structure, fixtures, and mocking strategies
+- [Integration Testing](/openwiki/integration-tests.md): API cassettes and end-to-end test patterns

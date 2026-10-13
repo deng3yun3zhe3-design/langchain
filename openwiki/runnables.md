@@ -14,10 +14,10 @@ sources:
     resource: repo://libs/core/langchain_core/runnables/fallbacks.py
   - id: openwiki-source-ebe3f825462d0b4a14ee3717
     resource: repo://libs/core/langchain_core/runnables/retry.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:18:34.589Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-10-13T08:31:57.014Z" }
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+    at: 2026-10-13T08:31:57.014Z
 ---
 
 ## Overview
@@ -322,7 +322,7 @@ result = model.invoke("Hello")  # Returns first successful result
 - Proceeds until one succeeds or all fail.
 - Optionally passes exceptions to fallbacks for adaptive recovery.
 
-**Retry**: `RunnableRetry` (`repo://libs/core/langchain_core/runnables/retry.py#L48-L150`)
+**Retry**: `RunnableRetry` (`repo://libs/core/langchain_core/runnables/retry.py#L50-L383`)
 
 ```python
 runnable = ChatOpenAI().with_retry(

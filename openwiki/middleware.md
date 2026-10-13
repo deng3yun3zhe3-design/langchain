@@ -14,10 +14,10 @@ sources:
     resource: repo://libs/langchain_v1/langchain/agents/middleware/tool_error.py
   - id: openwiki-source-03e8ca0eebe37feda8566793
     resource: repo://libs/langchain_v1/langchain/agents/middleware/types.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-28T08:35:20.640Z" }
+generated: { by: "openwiki/0.5.0", at: "2026-10-13T08:31:57.014Z" }
 verified:
   - by: openwiki/0.5.0
-    at: 2026-09-28T08:35:20.640Z
+    at: 2026-10-13T08:31:57.014Z
 ---
 
 ## Overview
@@ -56,15 +56,23 @@ Middleware can implement any or all of these lifecycle methods; unimplemented me
 
 #### Before/After Agent
 
+Invoked once per agent execution—at the beginning and end of the full execution loop.
+
 ```python
 def before_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
-    """Runs once at the very start of agent execution, before the first model call."""
+    """Runs once at the very start of agent execution, before the first model call.
+    
+    Useful for initializing state, logging, or validating inputs.
+    """
 
 async def abefore_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
     """Async version of before_agent."""
 
 def after_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
-    """Runs once after the agent loop terminates (no more tool calls or explicit exit)."""
+    """Runs once after the agent loop terminates (no more tool calls or explicit exit).
+    
+    Useful for cleanup, final logging, or state consolidation.
+    """
 
 async def aafter_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
     """Async version of after_agent."""
@@ -185,7 +193,7 @@ retry = ModelRetryMiddleware(
 
 ### Tool Execution Middleware
 
-**ToolErrorMiddleware**: Converts tool execution exceptions (e.g., API errors, validation failures) into error `ToolMessage` objects sent back to the model, allowing the model to recover or clarify. Opt-in by exception type.
+**ToolErrorMiddleware**: Converts tool execution exceptions (e.g., API errors, validation failures) into error `ToolMessage` objects sent back to the model, allowing the model to recover or clarify. Opt-in by exception type—unhandled exceptions propagate.
 
 ```python
 from langchain.agents.middleware import ToolErrorMiddleware
@@ -193,14 +201,45 @@ from langchain.agents.middleware import ToolErrorMiddleware
 def on_error(exc: Exception, request: ToolCallRequest) -> str | None:
     if isinstance(exc, ValueError):
         return f"Invalid argument for {request.tool_call['name']}: {exc}"
-    return None  # Propagate other exceptions
+    if isinstance(exc, TimeoutError):
+        return "Tool request timed out; please try again."
+    return None  # Propagate exceptions you don't handle
 
 middleware = ToolErrorMiddleware(on_error=on_error)
 ```
 
-**ToolRetryMiddleware**: Retries failed tool calls with configurable backoff and validation logic.
+Key behaviors:
+- Exceptions not handled by `on_error` propagate to the caller (not silently swallowed)
+- LangGraph control-flow signals (interrupts, Commands) always propagate
+- Only exceptions from tool *execution* are caught; argument validation errors are handled upstream
+- Can provide both sync (`on_error`) and async (`aon_error`) handlers
 
-**ToolCallLimitMiddleware**: Prevents infinite tool loops by enforcing a maximum number of tool calls.
+**ToolRetryMiddleware**: Automatically retries failed tool calls with exponential backoff. Similar to `ModelRetryMiddleware` but for tool execution. Supports custom exception filtering and on-failure behavior.
+
+```python
+from langchain.agents.middleware import ToolRetryMiddleware
+
+retry = ToolRetryMiddleware(
+    max_retries=3,
+    retry_on=(TimeoutError, ConnectionError),  # Retry only these
+    backoff_factor=2.0,
+    initial_delay=1.0,
+    on_failure="error",  # Or "continue" to return error message, or custom callable
+)
+```
+
+**ToolCallLimitMiddleware**: Prevents infinite tool loops by enforcing per-tool and global limits. Tracks call counts per agent run and per thread, with configurable exit behavior (block with error message, raise exception, or end agent immediately).
+
+```python
+from langchain.agents.middleware import ToolCallLimitMiddleware
+
+limits = ToolCallLimitMiddleware(
+    tools=["search"],  # Limit specific tools
+    run_limit=5,       # Max 5 calls per agent invocation
+    thread_limit=50,   # Max 50 calls per conversation thread
+    exit_behavior="continue",  # Send error message, don't raise
+)
+```
 
 ### Control Flow & Approval Middleware
 
@@ -230,15 +269,49 @@ The middleware constructs `ActionRequest` objects (with name, args, and optional
 
 **PIIMiddleware**: Detects personally identifiable information (PII) in prompts, model responses, and tool outputs; optionally redacts or transforms it. Supports configurable detectors and redaction rules.
 
-**ContextEditingMiddleware**: Allows dynamic modification of agent context (system message, available tools) during execution.
+**ContextEditingMiddleware**: Allows dynamic modification of agent context (system message, available tools, or conversation history) during execution. Uses the `before_model` hook to intercept and modify the request before it reaches the model.
 
-**FileSearchMiddleware**: Integrates file search capabilities into the agent, retrieving relevant documents before model calls.
+**FilesystemFileSearchMiddleware** (and **ProviderToolSearchMiddleware**): Integrates file/document search capabilities into the agent. Retrieves relevant documents or available tools before model calls, augmenting the context dynamically based on user queries.
 
 ### System Tools Middleware
 
-**ShellToolMiddleware**: Provides controlled shell command execution with configurable resource limits, sandboxing (host, Docker, Codex), timeout enforcement, and output truncation.
+**ShellToolMiddleware**: Registers a persistent `shell` tool that executes shell commands in a controlled environment. Supports multiple execution policies (HostExecutionPolicy, DockerExecutionPolicy, CodexSandboxExecutionPolicy) for sandboxing. Features include resource limits, timeout enforcement, output truncation, and optional redaction of sensitive data (PIIMatch).
 
-**TodoListMiddleware**: Adds persistent todo list management capability.
+```python
+from langchain.agents.middleware import ShellToolMiddleware, HostExecutionPolicy
+
+shell = ShellToolMiddleware(
+    execution_policy=HostExecutionPolicy(),  # Or Docker/Codex
+    timeout=30.0,                             # Command timeout
+    output_max_chars=10000,                   # Truncate large outputs
+)
+```
+
+**TodoListMiddleware**: Registers a persistent todo list tool, allowing the agent to create, manage, and track tasks across the conversation lifetime.
+
+### Testing & Utility Middleware
+
+**LLMToolEmulator**: Emulates tool execution using an LLM instead of invoking the actual tool. Useful for testing agent logic without calling real tools or for simulating tool behavior. Can emulate all tools or a selective list by name.
+
+```python
+from langchain.agents.middleware import LLMToolEmulator
+
+# Emulate all tools for testing
+middleware = LLMToolEmulator()
+
+# Or emulate specific tools by name
+middleware = LLMToolEmulator(tools=["get_weather", "search"])
+
+# Or use a custom model for emulation
+middleware = LLMToolEmulator(
+    tools=["get_weather"],
+    model="anthropic:claude-sonnet-4-5-20250929"
+)
+```
+
+**LLMToolSelectorMiddleware**: Uses an LLM to intelligently filter the agent's available tools based on the current query. Reduces token overhead by only making relevant tools available for each request. Configured with tool selection criteria and fallback behavior on parsing failures.
+
+**SummarizationMiddleware**: Automatically summarizes and compresses conversation history when approaching token limits. Uses a configurable summarizer model and trigger clauses to decide when to compress, helping agents maintain context in long conversations within token budgets.
 
 ## Request and Response Types
 
@@ -298,6 +371,45 @@ class ToolCallRequest:
     state: AgentState[Any]  # Agent state at time of call
     runtime: ToolRuntime  # Runtime context with tool-specific info
 ```
+
+**Modifying Tool Calls**: Like `ModelRequest`, `ToolCallRequest` provides an `override()` method to create a modified copy with changes to `tool_call` or `tool`. Use this to modify arguments or the tool itself without mutating the original.
+
+```python
+# Modify tool arguments before execution
+modified_call = {
+    **request.tool_call,
+    "args": {**request.tool_call["args"], "query": "modified query"}
+}
+request = request.override(tool_call=modified_call)
+```
+
+### Extending Agent State with Custom Schemas
+
+Middleware can extend the agent state with additional fields by defining a custom `state_schema`. This is useful for middleware that needs to persist intermediate computations, counts, or configuration across the agent loop.
+
+```python
+from typing_extensions import TypedDict, NotRequired, Annotated
+from langchain.agents.middleware import AgentState, PrivateStateAttr
+
+class MyCustomState(AgentState[Any]):
+    """Extend AgentState with custom fields."""
+    
+    call_count: NotRequired[Annotated[int, PrivateStateAttr]]
+    """Private field tracking calls; not exposed in input/output."""
+    
+    custom_data: NotRequired[str]
+    """Public custom field; exposed in input/output schemas."""
+
+class MyMiddleware(AgentMiddleware):
+    state_schema = MyCustomState
+    
+    def before_agent(self, state: MyCustomState, runtime):
+        if "call_count" not in state:
+            return {"call_count": 0}
+        return None
+```
+
+Middleware state fields marked with `PrivateStateAttr` are internal (not exposed in schemas). Use `@hook_config` or TypedDict annotations to control visibility.
 
 ## Composition and Execution Order
 
@@ -472,6 +584,128 @@ Middleware can provide sync-only, async-only, or both implementations. The agent
 
 **Best Practice**: Implement both versions unless the middleware is inherently async-only (e.g., uses async I/O).
 
+## Conditional Control Flow with Hooks and jump_to
+
+Middleware can use the `jump_to` mechanism to redirect agent execution to different nodes by returning a state update:
+
+```python
+from langchain.agents.middleware import AgentMiddleware, hook_config
+
+class ConditionalExitMiddleware(AgentMiddleware):
+    @hook_config(can_jump_to=["end", "model"])
+    def after_model(self, state, runtime):
+        # Check if we should exit early
+        if len(state["messages"]) > 50:
+            return {"jump_to": "end"}  # Exit immediately
+        if some_condition(state):
+            return {"jump_to": "model"}  # Loop back to model
+        return None  # Continue normal flow (to tools node)
+```
+
+The `jump_to` field is ephemeral (not persisted) and directs execution to:
+- `"tools"`: Execute pending tool calls (default after model call with tool_calls)
+- `"model"`: Loop back to the model node (e.g., after tool execution)
+- `"end"`: Exit the agent immediately
+
+Use `@hook_config(can_jump_to=[...])` decorator or `hook_config` decorator on method to declare which destinations are valid, enabling conditional edges in the agent graph.
+
+## Creating Middleware with Decorators
+
+Instead of subclassing `AgentMiddleware`, you can use decorators to quickly create middleware from functions. This is useful for simple, single-purpose middleware.
+
+### `@before_model` Decorator
+
+Creates middleware that runs before each model call. Useful for logging, state preparation, or conditional flow control.
+
+```python
+from langchain.agents.middleware import before_model
+
+@before_model
+def log_before_model(state, runtime):
+    print(f"About to call model with {len(state['messages'])} messages")
+
+# Or with conditional jumping:
+@before_model(can_jump_to=["end"])
+def maybe_skip_model(state, runtime):
+    if state.get("condition"):
+        return {"jump_to": "end"}
+    return None
+
+agent = create_agent(model, tools=[...], middleware=[log_before_model, maybe_skip_model])
+```
+
+### `@after_model` Decorator
+
+Creates middleware that runs after each model call, before tool execution. Common use case: inspection or modification of tool calls.
+
+```python
+from langchain.agents.middleware import after_model
+
+@after_model
+def validate_tool_calls(state, runtime):
+    last_msg = state["messages"][-1]
+    if hasattr(last_msg, "tool_calls") and len(last_msg.tool_calls) > 5:
+        print("Warning: Model requested more than 5 tools!")
+```
+
+### `@wrap_model_call` Decorator
+
+Creates middleware that intercepts the model call handler. Useful for retry logic, fallback, or caching.
+
+```python
+from langchain.agents.middleware import wrap_model_call
+from langchain.agents.middleware import ModelRequest, ModelResponse
+
+@wrap_model_call
+def cache_model_calls(request: ModelRequest, handler):
+    cache_key = hash(str(request.messages))
+    if cached := get_cache(cache_key):
+        return cached
+    response = handler(request)
+    save_cache(cache_key, response)
+    return response
+
+agent = create_agent(model, tools=[...], middleware=[cache_model_calls])
+```
+
+### `@wrap_tool_call` Decorator
+
+Creates middleware that intercepts tool call execution. Useful for validation, modification, or retries.
+
+```python
+from langchain.agents.middleware import wrap_tool_call
+from langchain.agents.middleware import ToolCallRequest
+
+@wrap_tool_call
+def validate_tool_args(request: ToolCallRequest, handler):
+    if request.tool_call["name"] == "search" and not request.tool_call["args"].get("query"):
+        from langchain_core.messages import ToolMessage
+        return ToolMessage(
+            content="search requires 'query' argument",
+            tool_call_id=request.tool_call["id"],
+            status="error"
+        )
+    return handler(request)
+```
+
+### `@dynamic_prompt` Decorator
+
+Creates middleware for dynamic system prompt generation based on request context (state, runtime).
+
+```python
+from langchain.agents.middleware import dynamic_prompt
+from langchain.agents.middleware import ModelRequest
+
+@dynamic_prompt
+def role_based_prompt(request: ModelRequest) -> str:
+    user_role = request.runtime.context.get("user_role", "user")
+    if user_role == "admin":
+        return "You are an expert system administrator. Provide comprehensive technical solutions."
+    return "You are a helpful assistant."
+
+agent = create_agent(model, tools=[...], middleware=[role_based_prompt])
+```
+
 ## Integration with Agent Factory
 
 Middleware is passed to `create_agent()` as a list:
@@ -511,6 +745,52 @@ class MyMiddleware(AgentMiddleware):
 
 Middleware hooks are automatically named in trace spans as `{middleware_name}.{hook_name}`, e.g., `ModelRetryMiddleware.wrap_model_call`, making it easy to identify which middleware handled each span.
 
+## Error Handling in Middleware
+
+### Exception Propagation
+
+Middleware should not silently catch exceptions unless explicitly designed to handle them:
+
+```python
+# ❌ Bad: Silently swallowing errors
+def wrap_model_call(self, request, handler):
+    try:
+        return handler(request)
+    except Exception:
+        # Not good—errors disappear silently
+        return AIMessage(content="Something went wrong")
+
+# ✅ Good: Explicit error handling
+def wrap_model_call(self, request, handler):
+    try:
+        return handler(request)
+    except RateLimitError:
+        # Explicitly handle known errors
+        return AIMessage(content="Rate limited; trying again...")
+    # Other exceptions propagate automatically
+```
+
+### Middleware Ordering for Error Handling
+
+When combining retry and error-handling middleware:
+
+```python
+agent = create_agent(
+    model,
+    tools=[...],
+    middleware=[
+        ModelRetryMiddleware(max_retries=2),      # Outer: retry transient errors
+        ToolErrorMiddleware(on_error=on_error),   # Middle: convert errors to messages
+        HumanInTheLoopMiddleware(...),            # Inner: approval for risky tools
+    ]
+)
+```
+
+**Order matters**: 
+- **ModelRetryMiddleware first (outermost)**: Catches transient failures and retries
+- **ToolErrorMiddleware second**: Converts residual exceptions to error messages for the model
+- **HumanInTheLoopMiddleware last (innermost)**: Approval gate before actual execution
+
 ## Common Patterns and Anti-Patterns
 
 ### ✅ Good Patterns
@@ -521,6 +801,7 @@ Middleware hooks are automatically named in trace spans as `{middleware_name}.{h
 4. **Clear Composition Order**: Document which middleware should run first, especially when order matters (e.g., retry before error handling).
 5. **Fallback Behavior**: Implement sync and async versions to support both execution paths.
 6. **Command Ordering**: When returning Commands, consider that multiple middleware commands stack—outermost middleware's non-reducer fields win.
+7. **Explicit Control Flow**: Use `jump_to` with `@hook_config` instead of modifying state to redirect agent execution.
 
 ### ❌ Anti-Patterns
 

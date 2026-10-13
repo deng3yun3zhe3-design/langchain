@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:05e90b9de166a5a7213cee462a99c10236b8c8eba605f2b5a856779baad552a6",
+  "pageVersion": "sha256:e1ed6fd179038995de71c316022e54eda5699ab7e17a6a340108f51a0ae0f09c",
   "claims": [
     {
       "id": "claim_347664eb68464142b558791c7a95093f",
@@ -8,7 +8,7 @@
       "evidence": [
         {
           "resource": "repo://libs/partners/openai/langchain_openai/__init__.py",
-          "version": "repo-file-v1:sha256:d08e06dea1f954a477fa8951e2a8387a10396d07b92a3a60fdced307c136a84f"
+          "version": "repo-file-v1:sha256:5673ccbe8f53267c2027dd390051424928a6e1e744c2f8c8a418960a29dccf4d"
         },
         {
           "resource": "repo://libs/partners/openai/langchain_openai/chat_models/base.py#L2904-L4266",
@@ -259,6 +259,6 @@
   ],
   "verification": {
     "by": "openwiki/0.5.0",
-    "at": "2026-09-28T08:35:20.640Z"
+    "at": "2026-10-13T08:31:57.014Z"
   }
 }
